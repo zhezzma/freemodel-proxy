@@ -30,7 +30,8 @@ const customFetch = async (req) => {
 
   // Gate
   if (settings.gateToken && pathname !== '/health' && pathname !== '/status') {
-    const bearer = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+    const bearer = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+      || req.headers.get('x-api-key') || '';
     const passed = bearer === settings.gateToken;
     console.log(`[gate] ${req.method} ${pathname} auth=${passed ? 'ok' : 'DENY'} token=${bearer ? '***' + bearer.slice(-4) : '<none>'}`);
     if (!passed) {
