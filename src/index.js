@@ -31,7 +31,9 @@ const customFetch = async (req) => {
   // Gate
   if (settings.gateToken && pathname !== '/health' && pathname !== '/status') {
     const bearer = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-    if (bearer !== settings.gateToken) {
+    const passed = bearer === settings.gateToken;
+    console.log(`[gate] ${req.method} ${pathname} auth=${passed ? 'ok' : 'DENY'} token=${bearer ? '***' + bearer.slice(-4) : '<none>'}`);
+    if (!passed) {
       return new Response(JSON.stringify({ error: { message: 'unauthorized' } }), {
         status: 401,
         headers: { 'content-type': 'application/json' },
