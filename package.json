@@ -1,0 +1,19 @@
+{
+  "name": "freemodel-proxy",
+  "version": "0.1.0",
+  "description": "Multi-account proxy for cc.freemodel.dev — Anthropic Messages / OpenAI Chat / OpenAI Responses",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "1.13.7",
+    "hono": "4.6.14"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
