@@ -24,10 +24,9 @@ const RESP_STRIP = new Set([
   'content-length',   // 流式时长度未知
 ]);
 
-/** 构造上游 URL：去掉客户端的 ?key= 参数（若有），保留其他 query */
+/** 构造上游 URL：保留原始 pathname + query */
 function buildUpstreamUrl(originalUrl) {
   const u = new URL(originalUrl);
-  u.searchParams.delete('key');
   return `${config.upstream}${u.pathname}${u.search}`;
 }
 
