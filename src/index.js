@@ -7,31 +7,8 @@ import { listModels, getModel } from './models.js';
 
 const app = new Hono();
 
-// Gate
-app.use('*', async (c, next) => {
-  if (!settings.gateToken) return next();
-  if (c.req.path === '/health' || c.req.path === '/status') return next();
-  const bearer = (c.req.header('authorization') || '').replace(/^Bearer\s+/i, '');
-  if (bearer === settings.gateToken) return next();
-  return c.json({ error: { message: 'unauthorized' } }, 401);
-});
-
 app.get('/health', (c) => c.json({ ok: true, tokens: pool.count() }));
 app.get('/status', (c) => c.json({ tokens: pool.snapshot() }));
-
-// Model list — cache & serve
-const modelsOut = async (c) => c.json(await listModels());
-const modelOut = async (c) => {
-  const m = await getModel(c.req.param('id'));
-  return m ? c.json(m) : c.json({ error: { message: `unknown model: ${c.req.param('id')}` } }, 404);
-};
-app.get('/models', modelsOut);
-app.get('/v1/models', modelsOut);
-app.get('/v1/models/:id', modelOut);
-
-// Transparent relay: Anthropic Messages, OpenAI Chat, OpenAI Responses, Codex, etc.
-app.all('/v1/*', (c) => relay(c.req.raw));
-app.all('/messages', (c) => relay(c.req.raw));
 
 app.get('/', (c) =>
   c.json({
@@ -45,7 +22,56 @@ app.get('/', (c) =>
   }),
 );
 
-const srv = serve({ fetch: app.fetch, port: settings.port, hostname: settings.host }, (info) => {
+// 自定义 fetch：gate + 路由分发，绕过 Hono 中间件以避免流式响应内部状态错误
+const honoFetch = app.fetch;
+const customFetch = async (req) => {
+  const url = new URL(req.url);
+  const pathname = url.pathname;
+
+  // Gate
+  if (settings.gateToken && pathname !== '/health' && pathname !== '/status') {
+    const bearer = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+    if (bearer !== settings.gateToken) {
+      return new Response(JSON.stringify({ error: { message: 'unauthorized' } }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+  }
+
+  // /models /v1/models
+  if (req.method === 'GET' && (pathname === '/models' || pathname === '/v1/models')) {
+    return new Response(JSON.stringify(await listModels()), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  // /v1/models/:id
+  const modelIdMatch = pathname.match(/^\/v1\/models\/(.+)$/);
+  if (req.method === 'GET' && modelIdMatch) {
+    const m = await getModel(modelIdMatch[1]);
+    if (!m) {
+      return new Response(JSON.stringify({ error: { message: `unknown model: ${modelIdMatch[1]}` } }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify(m), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  // Relay: /v1/* (except /v1/models), /messages
+  if (pathname === '/messages' || (pathname.startsWith('/v1/') && !pathname.startsWith('/v1/models'))) {
+    return relay(req);
+  }
+
+  // Fallback to Hono (/, /health, /status)
+  return honoFetch(req);
+};
+
+const srv = serve({ fetch: customFetch, port: settings.port, hostname: settings.host }, (info) => {
   console.log(`freemodel-proxy → ${info.address}:${info.port}`);
   console.log(`  anthropic: ${settings.upstreamAnthropic}`);
   console.log(`  openai:    ${settings.upstreamOpenAI}`);
