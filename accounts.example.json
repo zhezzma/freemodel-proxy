@@ -1,10 +1,10 @@
 [
   {
-    "account": "user1@example.com",
-    "apiKey": "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    "label": "user1@example.com",
+    "token": "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
   },
   {
-    "account": "user2@example.com",
-    "apiKey": "sk-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    "label": "user2@example.com",
+    "token": "sk-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
   }
 ]

@@ -1,157 +1,111 @@
-import { config } from './config.js';
-import { accountManager } from './accountManager.js';
+import { settings } from './config.js';
+import { pool } from './accountManager.js';
 
-// HTTP/1.1 hop-by-hop headers — 不透传
-const HOP_BY_HOP = new Set([
-  'connection',
-  'keep-alive',
-  'transfer-encoding',
-  'upgrade',
-  'proxy-authenticate',
-  'proxy-authorization',
-  'te',
-  'trailer',
-  'host',
-  'content-length',
-  'accept-encoding', // fetch 自行处理解压
+const STRIP_REQ = new Set([
+  'connection', 'keep-alive', 'transfer-encoding', 'upgrade',
+  'proxy-authenticate', 'proxy-authorization', 'te', 'trailer',
+  'host', 'content-length', 'accept-encoding',
 ]);
 
-const RESP_STRIP = new Set([
-  'transfer-encoding',
-  'connection',
-  'keep-alive',
-  'content-encoding', // 已解压
-  'content-length',   // 流式时长度未知
+const STRIP_RES = new Set([
+  'transfer-encoding', 'connection', 'keep-alive',
+  'content-encoding', 'content-length',
 ]);
 
-/** 构造上游 URL：保留原始 pathname + query */
-function buildUpstreamUrl(originalUrl) {
-  const u = new URL(originalUrl);
-  return `${config.upstream}${u.pathname}${u.search}`;
+function upstreamTarget(clientUrl) {
+  const u = new URL(clientUrl);
+  return `${settings.upstreamOrigin}${u.pathname}${u.search}`;
 }
 
-async function readErrorBody(res) {
-  try {
-    const buf = await res.arrayBuffer();
-    return new TextDecoder().decode(buf);
-  } catch {
-    return '';
-  }
+async function drainBody(res) {
+  try { return new TextDecoder().decode(await res.arrayBuffer()); } catch { return ''; }
 }
 
-function classifyFailure(status, bodyText) {
-  if (status === 429) return { retryable: true, reason: 'rateLimit' };
+function diagnose(status, body) {
+  if (status === 429) return { retry: true, cause: 'rate' };
   if (status === 403) {
-    const isQuota = /quota|exceed|insufficient|limit/i.test(bodyText);
-    return { retryable: true, reason: isQuota ? 'quota' : 'permission' };
+    const quota = /quota|exceed|insufficient|limit/i.test(body);
+    return { retry: true, cause: quota ? 'quota' : 'perm' };
   }
-  if (status === 401) return { retryable: true, reason: 'permission' };
-  if (status >= 500 && status < 600) return { retryable: true, reason: 'serverError' };
-  return { retryable: false, reason: 'clientError' };
+  if (status === 401) return { retry: true, cause: 'perm' };
+  if (status >= 500) return { retry: true, cause: 'srv' };
+  return { retry: false, cause: 'badreq' };
 }
 
-/**
- * 透明转发 + 多账号轮转
- *
- * @param {Request} req
- * @returns {Promise<Response>}
- */
-export async function forward(req) {
-  if (accountManager.size() === 0) {
-    return jsonError(503, 'No accounts configured');
+export async function relay(req) {
+  if (pool.count() === 0) {
+    return Response.json({ error: { message: 'no tokens configured' } }, { status: 503 });
   }
 
   const method = req.method.toUpperCase();
-  const hasBody = method !== 'GET' && method !== 'HEAD';
-  const bodyBuf = hasBody ? await req.arrayBuffer() : undefined;
+  const bodyBytes = (method !== 'GET' && method !== 'HEAD') ? await req.arrayBuffer() : undefined;
+  const target = upstreamTarget(req.url);
 
-  const upstreamUrl = buildUpstreamUrl(req.url);
-
-  // 清理请求头：去掉 hop-by-hop + 客户端的 Authorization（用自己的）
-  const baseHeaders = {};
+  const keepHeaders = {};
   for (const [k, v] of req.headers) {
     const lk = k.toLowerCase();
-    if (HOP_BY_HOP.has(lk)) continue;
-    if (lk === 'authorization') continue; // 不透传客户端凭据
-    baseHeaders[k] = v;
+    if (STRIP_REQ.has(lk)) continue;
+    if (lk === 'authorization') continue;
+    keepHeaders[k] = v;
   }
 
-  /** @type {{status:number, reason:string, body:string, account:string}[]} */
-  const tried = [];
+  const attempts = [];
 
-  for (const acc of accountManager.pick(config.maxRetries || undefined)) {
-    const headers = {
-      ...baseHeaders,
-      authorization: `Bearer ${acc.apiKey}`,
-    };
+  for (const entry of pool.next(settings.maxAttempts || undefined)) {
+    const hdrs = { ...keepHeaders, authorization: `Bearer ${entry.token}` };
 
     let upstream;
     try {
-      upstream = await fetch(upstreamUrl, {
-        method,
-        headers,
-        body: bodyBuf,
-        duplex: 'half',
-      });
-    } catch (e) {
-      accountManager.reportFailure(acc, 'serverError', `fetch error: ${e.message}`);
-      tried.push({ status: 0, reason: 'fetchError', body: e.message, account: acc.account });
+      upstream = await fetch(target, { method, headers: hdrs, body: bodyBytes, duplex: 'half' });
+    } catch (err) {
+      pool.markFail(entry, 'srv', `fetch: ${err.message}`);
+      attempts.push({ label: entry.label, status: 0, cause: 'fetchErr', detail: err.message });
       continue;
     }
 
     if (upstream.ok) {
-      accountManager.reportSuccess(acc);
-      return passthroughResponse(upstream, acc.account);
+      pool.markOk(entry);
+      return streamBack(upstream, entry.label);
     }
 
-    const bodyText = await readErrorBody(upstream);
-    const cls = classifyFailure(upstream.status, bodyText);
-    accountManager.reportFailure(acc, cls.reason, `${upstream.status}: ${bodyText.slice(0, 160)}`);
-    tried.push({ status: upstream.status, reason: cls.reason, body: bodyText, account: acc.account });
+    const errBody = await drainBody(upstream);
+    const diag = diagnose(upstream.status, errBody);
+    pool.markFail(entry, diag.cause, `${upstream.status}: ${errBody.slice(0, 160)}`);
+    attempts.push({ label: entry.label, status: upstream.status, cause: diag.cause, detail: errBody });
 
-    if (!cls.retryable) {
-      return rebuildResponse(upstream.status, upstream.headers, bodyText, acc.account);
+    if (!diag.retry) {
+      return echoResponse(upstream.status, upstream.headers, errBody, entry.label);
     }
   }
 
-  if (tried.length === 0) {
-    return jsonError(503, 'All accounts are cooling down', { tried });
+  if (attempts.length === 0) {
+    return Response.json({ error: { message: 'all tokens frozen' } }, { status: 503 });
   }
-  const last = tried[tried.length - 1];
-  return jsonError(
-    last.status >= 400 && last.status < 600 ? last.status : 502,
-    `Upstream failed on all ${tried.length} account(s): ${last.reason}`,
-    { tried: tried.map((t) => ({ account: t.account, status: t.status, reason: t.reason })) },
-  );
+  const last = attempts[attempts.length - 1];
+  return Response.json({
+    error: {
+      message: `exhausted ${attempts.length} token(s): ${last.cause}`,
+      attempts: attempts.map((a) => ({ label: a.label, status: a.status, cause: a.cause })),
+    },
+  }, { status: last.status >= 400 ? last.status : 502 });
 }
 
-function passthroughResponse(upstream, accountTag) {
-  const headers = new Headers();
+function streamBack(upstream, tag) {
+  const h = new Headers();
   for (const [k, v] of upstream.headers) {
-    if (RESP_STRIP.has(k.toLowerCase())) continue;
-    headers.set(k, v);
+    if (STRIP_RES.has(k.toLowerCase())) continue;
+    h.set(k, v);
   }
-  headers.set('x-served-by-account', accountTag);
-  return new Response(upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers,
-  });
+  h.set('x-served-by', tag);
+  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: h });
 }
 
-function rebuildResponse(status, srcHeaders, bodyText, accountTag) {
-  const headers = new Headers();
-  for (const [k, v] of srcHeaders) {
-    if (RESP_STRIP.has(k.toLowerCase())) continue;
-    headers.set(k, v);
+function echoResponse(status, src, body, tag) {
+  const h = new Headers();
+  for (const [k, v] of src) {
+    if (STRIP_RES.has(k.toLowerCase())) continue;
+    h.set(k, v);
   }
-  headers.set('x-served-by-account', accountTag);
-  return new Response(bodyText, { status, headers });
-}
-
-function jsonError(status, message, extra) {
-  return new Response(JSON.stringify({ error: { message, ...extra } }), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
+  h.set('x-served-by', tag);
+  return new Response(body, { status, headers: h });
 }

@@ -1,60 +1,49 @@
-// 从上游 /v1/models 拉取模型列表（OpenAI 格式），5 分钟缓存，直接透传并缓存。
+// 从上游 /v1/models 拉取模型列表，5 分钟缓存。
 
-import { config } from './config.js';
-import { accountManager } from './accountManager.js';
+import { settings } from './config.js';
+import { pool } from './accountManager.js';
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const TTL = 5 * 60 * 1000;
+let cached = null;
+let cachedAt = 0;
+let flying = null;
 
-let cache = null;
-let cacheAt = 0;
-let inflight = null;
-
-async function fetchFromUpstream() {
-  for (const acc of accountManager.pick()) {
+async function pull() {
+  for (const entry of pool.next()) {
     try {
-      const res = await fetch(`${config.upstream}/v1/models`, {
-        headers: { authorization: `Bearer ${acc.apiKey}` },
+      const res = await fetch(`${settings.upstreamOrigin}/v1/models`, {
+        headers: { authorization: `Bearer ${entry.token}` },
       });
       if (!res.ok) continue;
       const data = await res.json();
-      if (data && data.object === 'list' && Array.isArray(data.data)) {
-        accountManager.reportSuccess(acc);
+      if (data?.object === 'list' && Array.isArray(data.data)) {
+        pool.markOk(entry);
         return data;
       }
-    } catch {
-      // 换下一个账号
-    }
+    } catch { /* try next token */ }
   }
   return null;
 }
 
 async function refresh() {
-  if (inflight) return inflight;
-  inflight = (async () => {
+  if (flying) return flying;
+  flying = (async () => {
     try {
-      const data = await fetchFromUpstream();
-      if (data) {
-        cache = data;
-        cacheAt = Date.now();
-      }
-      return cache;
-    } finally {
-      inflight = null;
-    }
+      const data = await pull();
+      if (data) { cached = data; cachedAt = Date.now(); }
+      return cached;
+    } finally { flying = null; }
   })();
-  return inflight;
+  return flying;
 }
 
 export async function listModels() {
-  const now = Date.now();
-  if (cache && now - cacheAt < CACHE_TTL_MS) return cache;
+  if (cached && Date.now() - cachedAt < TTL) return cached;
   const r = await refresh();
-  if (r) return r;
-  if (cache) return cache;
-  return { object: 'list', data: [] };
+  return r || cached || { object: 'list', data: [] };
 }
 
-export async function retrieveModel(id) {
+export async function getModel(id) {
   const list = await listModels();
   return list.data.find((m) => m.id === id) || null;
 }

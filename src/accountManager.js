@@ -1,149 +1,101 @@
 import fs from 'node:fs';
-import { config } from './config.js';
+import { settings } from './config.js';
 
-/**
- * @typedef {Object} Account
- * @property {string}  account       标识
- * @property {string}  apiKey        API Key（用作 Bearer token）
- * @property {boolean} [disabled]
- * @property {number}  cooldownUntil 冷却结束时间戳（ms）
- * @property {string}  [lastError]
- * @property {number}  successCount
- * @property {number}  failureCount
- */
-
-class AccountManager {
-  /** @type {Account[]} */
-  #accounts = [];
-  #cursor = 0;
-  #fileMTime = 0;
+class TokenPool {
+  #entries = [];
+  #idx = 0;
+  #mtime = 0;
 
   constructor() {
-    this.reload();
+    this.#reload();
     try {
-      fs.watch(config.accountsFile, { persistent: false }, () => {
-        clearTimeout(this._t);
-        this._t = setTimeout(() => this.reload(), 200);
+      fs.watch(settings.accountsPath, { persistent: false }, () => {
+        clearTimeout(this._debounce);
+        this._debounce = setTimeout(() => this.#reload(), 200);
       });
-    } catch (e) {
-      console.warn(`[accounts] fs.watch 不可用: ${e.message}`);
+    } catch {
+      // fs.watch may not be available
     }
   }
 
-  reload() {
+  #reload() {
     let raw;
     try {
-      const stat = fs.statSync(config.accountsFile);
-      if (stat.mtimeMs === this.#fileMTime) return;
-      this.#fileMTime = stat.mtimeMs;
-      raw = fs.readFileSync(config.accountsFile, 'utf8');
-    } catch (e) {
-      console.error(`[accounts] 无法读取 ${config.accountsFile}: ${e.message}`);
+      const stat = fs.statSync(settings.accountsPath);
+      if (stat.mtimeMs === this.#mtime) return;
+      this.#mtime = stat.mtimeMs;
+      raw = fs.readFileSync(settings.accountsPath, 'utf8');
+    } catch {
       return;
     }
     let data;
-    try {
-      data = JSON.parse(raw);
-    } catch (e) {
-      console.error(`[accounts] JSON 解析失败: ${e.message}`);
-      return;
-    }
-    if (!Array.isArray(data)) {
-      console.error('[accounts] accounts.json 必须是数组');
-      return;
-    }
+    try { data = JSON.parse(raw); } catch { return; }
+    if (!Array.isArray(data)) return;
 
-    const prev = new Map(this.#accounts.map((a) => [a.apiKey, a]));
-    this.#accounts = data
-      .filter((a) => a && typeof a.apiKey === 'string' && a.apiKey.length > 0)
-      .map((a) => {
-        const old = prev.get(a.apiKey);
+    const old = new Map(this.#entries.map((e) => [e.token, e]));
+    this.#entries = data
+      .filter((d) => d && typeof d.token === 'string' && d.token.length > 0)
+      .map((d) => {
+        const prev = old.get(d.token);
         return {
-          account: a.account || '<anonymous>',
-          apiKey: a.apiKey,
-          disabled: !!a.disabled,
-          cooldownUntil: old?.cooldownUntil ?? 0,
-          lastError: old?.lastError,
-          successCount: old?.successCount ?? 0,
-          failureCount: old?.failureCount ?? 0,
+          label: d.label || d.account || '<anon>',
+          token: d.token,
+          disabled: !!d.disabled,
+          frozenUntil: prev?.frozenUntil ?? 0,
+          lastErr: prev?.lastErr,
+          ok: prev?.ok ?? 0,
+          fail: prev?.fail ?? 0,
         };
       });
-    if (this.#cursor >= this.#accounts.length) this.#cursor = 0;
-    const enabled = this.#accounts.filter((a) => !a.disabled).length;
-    console.log(
-      `[accounts] 已加载 ${this.#accounts.length} 个账号（启用 ${enabled} / 禁用 ${this.#accounts.length - enabled}）`,
-    );
+    if (this.#idx >= this.#entries.length) this.#idx = 0;
+    const on = this.#entries.filter((e) => !e.disabled).length;
+    console.log(`[pool] loaded ${this.#entries.length} tokens (${on} active / ${this.#entries.length - on} disabled)`);
   }
 
-  size() {
-    return this.#accounts.length;
-  }
+  count() { return this.#entries.length; }
 
-  /**
-   * Round-robin 迭代器，跳过冷却中/禁用的账号
-   * @param {number} [limit]
-   */
-  *pick(limit) {
-    const n = this.#accounts.length;
+  /** round-robin iterator over available tokens */
+  *next(limit) {
+    const n = this.#entries.length;
     if (n === 0) return;
     const cap = limit && limit > 0 ? Math.min(limit, n) : n;
     const now = Date.now();
-    const start = this.#cursor % n;
-    this.#cursor = (this.#cursor + 1) % n;
-
-    let yielded = 0;
-    for (let step = 0; step < n && yielded < cap; step++) {
-      const acc = this.#accounts[(start + step) % n];
-      if (acc.disabled) continue;
-      if (acc.cooldownUntil > now) continue;
-      yielded++;
-      yield acc;
+    const start = this.#idx % n;
+    this.#idx = (this.#idx + 1) % n;
+    let y = 0;
+    for (let s = 0; s < n && y < cap; s++) {
+      const e = this.#entries[(start + s) % n];
+      if (e.disabled || e.frozenUntil > now) continue;
+      y++;
+      yield e;
     }
   }
 
-  reportSuccess(acc) {
-    acc.successCount++;
-    acc.cooldownUntil = 0;
-    acc.lastError = undefined;
-  }
+  markOk(e) { e.ok++; e.frozenUntil = 0; e.lastErr = undefined; }
 
-  reportFailure(acc, reason, message) {
-    acc.failureCount++;
-    acc.lastError = message?.slice(0, 200);
-    const now = Date.now();
+  markFail(e, cause, msg) {
+    e.fail++;
+    e.lastErr = String(msg || '').slice(0, 200);
     let ms = 0;
-    switch (reason) {
-      case 'rateLimit':
-        ms = config.cooldown.rateLimit;
-        break;
-      case 'quota':
-      case 'permission':
-        ms = config.cooldown.quota;
-        break;
-      case 'serverError':
-        ms = config.cooldown.serverError;
-        break;
-      default:
-        ms = 0;
-    }
-    if (ms > 0) acc.cooldownUntil = now + ms;
-    console.warn(
-      `[accounts] ${acc.account} 失败(${reason})${ms ? ` 冷却 ${Math.round(ms / 1000)}s` : ''}: ${acc.lastError || ''}`,
-    );
+    if (cause === 'rate') ms = settings.cooldown.rateLimit;
+    else if (cause === 'quota' || cause === 'perm') ms = settings.cooldown.quota;
+    else if (cause === 'srv') ms = settings.cooldown.serverError;
+    if (ms > 0) e.frozenUntil = Date.now() + ms;
+    console.warn(`[pool] ${e.label} fail (${cause})${ms ? ` freeze ${Math.round(ms / 1000)}s` : ''}: ${e.lastErr || ''}`);
   }
 
   snapshot() {
     const now = Date.now();
-    return this.#accounts.map((a) => ({
-      account: a.account,
-      apiKeyTail: '***' + a.apiKey.slice(-4),
-      disabled: a.disabled,
-      successCount: a.successCount,
-      failureCount: a.failureCount,
-      cooldownRemainingMs: Math.max(0, a.cooldownUntil - now),
-      lastError: a.lastError,
+    return this.#entries.map((e) => ({
+      label: e.label,
+      tokenTail: '***' + e.token.slice(-4),
+      disabled: e.disabled,
+      ok: e.ok,
+      fail: e.fail,
+      freezeLeftMs: Math.max(0, e.frozenUntil - now),
+      lastErr: e.lastErr,
     }));
   }
 }
 
-export const accountManager = new AccountManager();
+export const pool = new TokenPool();
