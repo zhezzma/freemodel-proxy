@@ -21,7 +21,10 @@ export const settings = {
   port: int(process.env.PORT, 18002),
   host: process.env.HOST || '0.0.0.0',
   accountsPath: path.resolve(process.cwd(), process.env.ACCOUNTS_FILE || './accounts.json'),
-  upstreamOrigin: (process.env.UPSTREAM || 'https://cc.freemodel.dev').replace(/\/+$/, ''),
+  // Anthropic Messages → cc.freemodel.dev
+  upstreamAnthropic: (process.env.UPSTREAM_ANTHROPIC || 'https://cc.freemodel.dev').replace(/\/+$/, ''),
+  // OpenAI Chat / Responses → api.freemodel.dev
+  upstreamOpenAI: (process.env.UPSTREAM_OPENAI || 'https://api.freemodel.dev').replace(/\/+$/, ''),
   gateToken: process.env.ACCESS_TOKEN || '',
   maxAttempts: int(process.env.MAX_RETRIES, 0),
   cooldown: {

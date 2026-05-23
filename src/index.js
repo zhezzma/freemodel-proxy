@@ -31,19 +31,25 @@ app.get('/v1/models/:id', modelOut);
 
 // Transparent relay: Anthropic Messages, OpenAI Chat, OpenAI Responses, Codex, etc.
 app.all('/v1/*', (c) => relay(c.req.raw));
+app.all('/messages', (c) => relay(c.req.raw));
 
 app.get('/', (c) =>
   c.json({
     name: 'freemodel-proxy',
-    upstream: settings.upstreamOrigin,
-    routes: ['/v1/messages', '/v1/chat/completions', '/v1/responses', '/v1/models', '/models'],
+    upstreams: {
+      anthropic: settings.upstreamAnthropic,
+      openai: settings.upstreamOpenAI,
+    },
+    routes: ['/v1/messages', '/messages', '/v1/chat/completions', '/v1/responses', '/v1/models', '/models'],
     tokens: pool.count(),
   }),
 );
 
 const srv = serve({ fetch: app.fetch, port: settings.port, hostname: settings.host }, (info) => {
-  console.log(`freemodel-proxy → ${info.address}:${info.port}  ⇄  ${settings.upstreamOrigin}`);
-  console.log(`gate: ${settings.gateToken ? 'on' : 'off (open)'}`);
+  console.log(`freemodel-proxy → ${info.address}:${info.port}`);
+  console.log(`  anthropic: ${settings.upstreamAnthropic}`);
+  console.log(`  openai:    ${settings.upstreamOpenAI}`);
+  console.log(`  gate: ${settings.gateToken ? 'on' : 'off (open)'}`);
 });
 
 const stop = (sig) => {
