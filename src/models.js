@@ -2,6 +2,7 @@
 
 import { settings } from './config.js';
 import { pool } from './accountManager.js';
+import { diagnoseUpstreamFailure } from './quota.js';
 
 const TTL = 5 * 60 * 1000;
 let cached = null;
@@ -11,6 +12,7 @@ let flying = null;
 /** 从单个上游拉模型列表 */
 async function pullFrom(origin) {
   for (const entry of pool.next()) {
+    const requestStartedAt = Date.now();
     try {
       const res = await fetch(`${origin}/v1/models`, {
         headers: {
@@ -21,10 +23,16 @@ async function pullFrom(origin) {
           connection: 'keep-alive',
         },
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        const body = await res.text();
+        const diag = diagnoseUpstreamFailure(res.status, body);
+        pool.markFail(entry, diag.cause, `${res.status}: ${body.slice(0, 160)}`, diag.freezeMs);
+        if (!diag.retry) break;
+        continue;
+      }
       const data = await res.json();
       if (data?.object === 'list' && Array.isArray(data.data)) {
-        pool.markOk(entry);
+        pool.markOk(entry, requestStartedAt);
         return data.data;
       }
     } catch { /* next token */ }

@@ -1,5 +1,8 @@
 import fs from 'node:fs';
 import { settings } from './config.js';
+import { resolveFailureFreezeMs } from './quota.js';
+import { applyTokenState, loadTokenState, persistTokenState } from './tokenState.js';
+import { shouldClearFreezeOnOk } from './tokenLifecycle.js';
 
 class TokenPool {
   #entries = [];
@@ -43,13 +46,27 @@ class TokenPool {
           disabled: !!d.disabled,
           frozenUntil: prev?.frozenUntil ?? 0,
           lastErr: prev?.lastErr,
+          lastCause: prev?.lastCause,
+          lastFreezeAt: prev?.lastFreezeAt,
           ok: prev?.ok ?? 0,
           fail: prev?.fail ?? 0,
         };
       });
+    applyTokenState(this.#entries, loadTokenState(settings.tokenStatePath));
+    this.#persistState();
+
     if (this.#idx >= this.#entries.length) this.#idx = 0;
     const on = this.#entries.filter((e) => !e.disabled).length;
-    console.log(`[pool] loaded ${this.#entries.length} tokens (${on} active / ${this.#entries.length - on} disabled)`);
+    const frozen = this.#entries.filter((e) => !e.disabled && e.frozenUntil > Date.now()).length;
+    console.log(`[pool] loaded ${this.#entries.length} tokens (${on} active / ${this.#entries.length - on} disabled, ${frozen} frozen)`);
+  }
+
+  #persistState() {
+    try {
+      persistTokenState(settings.tokenStatePath, this.#entries);
+    } catch (err) {
+      console.warn(`[pool] persist token state failed: ${err.message}`);
+    }
   }
 
   count() { return this.#entries.length; }
@@ -71,16 +88,27 @@ class TokenPool {
     }
   }
 
-  markOk(e) { e.ok++; e.frozenUntil = 0; e.lastErr = undefined; }
+  markOk(e, requestStartedAt = Date.now()) {
+    e.ok++;
+    if (shouldClearFreezeOnOk(e.lastFreezeAt, requestStartedAt)) {
+      e.frozenUntil = 0;
+      e.lastFreezeAt = undefined;
+      e.lastErr = undefined;
+      e.lastCause = undefined;
+      this.#persistState();
+    }
+  }
 
-  markFail(e, cause, msg) {
+  markFail(e, cause, msg, freezeMs) {
     e.fail++;
     e.lastErr = String(msg || '').slice(0, 200);
-    let ms = 0;
-    if (cause === 'rate') ms = settings.cooldown.rateLimit;
-    else if (cause === 'quota' || cause === 'perm') ms = settings.cooldown.quota;
-    else if (cause === 'srv') ms = settings.cooldown.serverError;
-    if (ms > 0) e.frozenUntil = Date.now() + ms;
+    e.lastCause = cause;
+    const ms = resolveFailureFreezeMs(cause, settings.cooldown, freezeMs);
+    if (ms > 0) {
+      e.lastFreezeAt = Date.now();
+      e.frozenUntil = e.lastFreezeAt + ms;
+    }
+    this.#persistState();
     console.warn(`[pool] ${e.label} fail (${cause})${ms ? ` freeze ${Math.round(ms / 1000)}s` : ''}: ${e.lastErr || ''}`);
   }
 
@@ -93,7 +121,9 @@ class TokenPool {
       ok: e.ok,
       fail: e.fail,
       freezeLeftMs: Math.max(0, e.frozenUntil - now),
+      frozenUntil: e.frozenUntil > now ? new Date(e.frozenUntil).toISOString() : undefined,
       lastErr: e.lastErr,
+      lastCause: e.lastCause,
     }));
   }
 }

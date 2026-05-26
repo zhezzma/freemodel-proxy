@@ -16,11 +16,13 @@ if (fs.existsSync(envPath)) {
 }
 
 const int = (s, d) => (Number.isFinite(Number(s)) ? Number(s) : d);
+const accountsPath = path.resolve(process.cwd(), process.env.ACCOUNTS_FILE || './accounts.json');
 
 export const settings = {
   port: int(process.env.PORT, 18002),
   host: process.env.HOST || '0.0.0.0',
-  accountsPath: path.resolve(process.cwd(), process.env.ACCOUNTS_FILE || './accounts.json'),
+  accountsPath,
+  tokenStatePath: path.resolve(process.cwd(), process.env.TOKEN_STATE_FILE || path.join(path.dirname(accountsPath), 'token-state.json')),
   // Anthropic Messages → cc.freemodel.dev
   upstreamAnthropic: (process.env.UPSTREAM_ANTHROPIC || 'https://cc.freemodel.dev').replace(/\/+$/, ''),
   // OpenAI Chat / Responses → api.freemodel.dev

@@ -1,3 +1,4 @@
 node_modules/
 .env
 accounts.json
+token-state.json

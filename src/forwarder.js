@@ -1,5 +1,6 @@
 import { settings } from './config.js';
 import { pool } from './accountManager.js';
+import { diagnoseUpstreamFailure } from './quota.js';
 
 const STRIP_REQ = new Set([
   'connection', 'keep-alive', 'transfer-encoding', 'upgrade',
@@ -32,18 +33,6 @@ function upstreamTarget(clientUrl, isAnthropic) {
 
 async function drainBody(res) {
   try { return new TextDecoder().decode(await res.arrayBuffer()); } catch { return ''; }
-}
-
-function diagnose(status, body) {
-  if (status === 429) return { retry: true, cause: 'rate' };
-  if (status === 403) {
-    const quota = /quota|exceed|insufficient|limit/i.test(body);
-    return { retry: true, cause: quota ? 'quota' : 'perm' };
-  }
-  if (status === 401) return { retry: true, cause: 'perm' };
-  if (status === 305) return { retry: true, cause: 'srv' };
-  if (status >= 500) return { retry: true, cause: 'srv' };
-  return { retry: false, cause: 'badreq' };
 }
 
 /** 判断是否为 Anthropic Messages 端点 */
@@ -146,6 +135,7 @@ export async function relay(req) {
   const attempts = [];
 
   for (const entry of pool.next(settings.maxAttempts || undefined)) {
+    const requestStartedAt = Date.now();
     let reqInit;
     if (anthropic && rawBody) {
       const enriched = buildAnthropicRequest(rawBody, entry.token);
@@ -178,13 +168,13 @@ export async function relay(req) {
     }
 
     if (upstream.ok) {
-      pool.markOk(entry);
+      pool.markOk(entry, requestStartedAt);
       return streamBack(upstream, entry.label);
     }
 
     const errBody = await drainBody(upstream);
-    const diag = diagnose(upstream.status, errBody);
-    pool.markFail(entry, diag.cause, `${upstream.status}: ${errBody.slice(0, 160)}`);
+    const diag = diagnoseUpstreamFailure(upstream.status, errBody);
+    pool.markFail(entry, diag.cause, `${upstream.status}: ${errBody.slice(0, 160)}`, diag.freezeMs);
     attempts.push({ label: entry.label, status: upstream.status, cause: diag.cause, detail: errBody });
 
     if (!diag.retry) {
