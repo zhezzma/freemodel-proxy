@@ -48,6 +48,23 @@ test('ignores expired persisted frozen state', () => {
   assert.equal(entries[0].lastErr, undefined);
 });
 
+test('ignores persisted non-quota frozen state', () => {
+  const entries = [{ label: 'user@example.com', token: 'sk-secret-token', frozenUntil: 0 }];
+  const state = {
+    [tokenStateKey(entries[0].token)]: {
+      label: 'user@example.com',
+      frozenUntil: 5_000,
+      lastErr: '403: perm',
+      cause: 'perm',
+    },
+  };
+
+  applyTokenState(entries, state, 1_000);
+
+  assert.equal(entries[0].frozenUntil, 0);
+  assert.equal(entries[0].lastErr, undefined);
+});
+
 test('persists active frozen entries and prunes recovered tokens', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'token-state-'));
   const statePath = path.join(dir, 'token-state.json');
@@ -55,6 +72,7 @@ test('persists active frozen entries and prunes recovered tokens', () => {
   const recoveredToken = 'sk-recovered';
   const entries = [
     { label: 'frozen@example.com', token: frozenToken, frozenUntil: 5_000, lastErr: '402: quota', lastCause: 'quota', fail: 2 },
+    { label: 'perm@example.com', token: 'sk-perm', frozenUntil: 5_000, lastErr: '403: perm', lastCause: 'perm', fail: 1 },
     { label: 'ok@example.com', token: recoveredToken, frozenUntil: 0, lastErr: undefined, fail: 0 },
   ];
 

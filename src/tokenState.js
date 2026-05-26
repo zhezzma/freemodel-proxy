@@ -19,7 +19,7 @@ export function loadTokenState(statePath) {
 export function applyTokenState(entries, state, now = Date.now()) {
   for (const entry of entries) {
     const saved = state[tokenStateKey(entry.token)];
-    if (!saved || !Number.isFinite(saved.frozenUntil) || saved.frozenUntil <= now) continue;
+    if (!saved || saved.cause !== 'quota' || !Number.isFinite(saved.frozenUntil) || saved.frozenUntil <= now) continue;
 
     // 只恢复仍未到期的冻结状态；若内存中已有更晚冻结时间，保留更保守的值。
     if (!Number.isFinite(entry.frozenUntil) || saved.frozenUntil > entry.frozenUntil) {
@@ -33,7 +33,7 @@ export function applyTokenState(entries, state, now = Date.now()) {
 export function persistTokenState(statePath, entries, now = Date.now()) {
   const state = {};
   for (const entry of entries) {
-    if (!Number.isFinite(entry.frozenUntil) || entry.frozenUntil <= now) continue;
+    if (entry.lastCause !== 'quota' || !Number.isFinite(entry.frozenUntil) || entry.frozenUntil <= now) continue;
     state[tokenStateKey(entry.token)] = {
       label: entry.label,
       tokenTail: `***${entry.token.slice(-4)}`,

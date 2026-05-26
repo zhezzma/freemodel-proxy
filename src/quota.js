@@ -31,9 +31,13 @@ function beijingDateToUtcMs(year, month, day, hour, minute) {
 
 function normalizeHour(text, rawHour) {
   let hour = Number(rawHour);
-  // 中文“凌晨12点”语义通常指当天 00:xx，而不是中午 12:xx。
-  if (/凌晨\s*12\s*[点:]/.test(text)) hour = 0;
-  else if (/下午|晚上/.test(text) && hour < 12) hour += 12;
+  const has = (period) => new RegExp(`${period}\\s*${rawHour}\\s*[点:]`).test(text);
+
+  // 中文 12 点边界：上午/凌晨 12 点是 00:xx，中午/下午 12 点是 12:xx，晚上 12 点是次日 00:xx。
+  if ((has('凌晨') || has('上午')) && hour === 12) return 0;
+  if (has('晚上') && hour === 12) return 24;
+  if (has('中午') && hour > 0 && hour < 12) return hour + 12;
+  if ((has('下午') || has('晚上')) && hour < 12) return hour + 12;
   return hour;
 }
 
@@ -92,11 +96,9 @@ function parseChineseResetMs(text, now = new Date()) {
 }
 
 export function resolveFailureFreezeMs(cause, cooldown, upstreamFreezeMs) {
+  if (cause !== 'quota') return 0;
   if (Number.isFinite(upstreamFreezeMs) && upstreamFreezeMs > 0) return upstreamFreezeMs;
-  if (cause === 'rate') return cooldown.rateLimit;
-  if (cause === 'quota' || cause === 'perm') return cooldown.quota;
-  if (cause === 'srv') return cooldown.serverError;
-  return 0;
+  return cooldown.quota;
 }
 
 export function diagnoseUpstreamFailure(status, body, now = new Date()) {
@@ -104,7 +106,7 @@ export function diagnoseUpstreamFailure(status, body, now = new Date()) {
   if (status === 429) return { retry: true, cause: 'rate' };
   if (status === 402) return { retry: true, cause: 'quota', freezeMs: parseChineseResetMs(text, now) };
   if (status === 403) {
-    const quota = /quota|exceed|insufficient|limit|限额|上限|用量/i.test(text);
+    const quota = /quota|exceed|insufficient|limit|限额|上限|用量|额度|耗尽/i.test(text);
     return { retry: true, cause: quota ? 'quota' : 'perm', freezeMs: quota ? parseChineseResetMs(text, now) : undefined };
   }
   if (status === 401) return { retry: true, cause: 'perm' };
