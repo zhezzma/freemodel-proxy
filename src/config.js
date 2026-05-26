@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizeAccountSelectionMode } from './accountSelection.js';
 
 const envPath = path.resolve(process.cwd(), '.env');
 if (fs.existsSync(envPath)) {
@@ -23,6 +24,7 @@ export const settings = {
   host: process.env.HOST || '0.0.0.0',
   accountsPath,
   tokenStatePath: path.resolve(process.cwd(), process.env.TOKEN_STATE_FILE || path.join(path.dirname(accountsPath), 'token-state.json')),
+  accountSelectionMode: normalizeAccountSelectionMode(process.env.ACCOUNT_SELECTION_MODE || 'sticky'),
   // Anthropic Messages → cc.freemodel.dev
   upstreamAnthropic: (process.env.UPSTREAM_ANTHROPIC || 'https://cc.freemodel.dev').replace(/\/+$/, ''),
   // OpenAI Chat / Responses → api.freemodel.dev

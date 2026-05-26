@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { settings } from './config.js';
 import { resolveFailureFreezeMs } from './quota.js';
 import { applyTokenState, loadTokenState, persistTokenState } from './tokenState.js';
+import { selectAccountOrder } from './accountSelection.js';
 import { shouldClearFreezeOnOk } from './tokenLifecycle.js';
 
 class TokenPool {
@@ -71,21 +72,12 @@ class TokenPool {
 
   count() { return this.#entries.length; }
 
-  /** round-robin iterator over available tokens */
+  /** iterator over available tokens using configured selection mode */
   *next(limit) {
-    const n = this.#entries.length;
-    if (n === 0) return;
-    const cap = limit && limit > 0 ? Math.min(limit, n) : n;
-    const now = Date.now();
-    const start = this.#idx % n;
-    this.#idx = (this.#idx + 1) % n;
-    let y = 0;
-    for (let s = 0; s < n && y < cap; s++) {
-      const e = this.#entries[(start + s) % n];
-      if (e.disabled || e.frozenUntil > now) continue;
-      y++;
-      yield e;
-    }
+    const state = { index: this.#idx };
+    const order = selectAccountOrder(this.#entries, settings.accountSelectionMode, state, limit);
+    this.#idx = state.index;
+    for (const entry of order) yield entry;
   }
 
   markOk(e, requestStartedAt = Date.now()) {
