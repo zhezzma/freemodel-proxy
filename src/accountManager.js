@@ -42,7 +42,7 @@ class TokenPool {
       .map((d) => {
         const prev = old.get(d.token);
         return {
-          label: d.label || d.account || '<anon>',
+          email: d.email || '<anon>',
           token: d.token,
           disabled: !!d.disabled,
           frozenUntil: prev?.frozenUntil ?? 0,
@@ -101,13 +101,13 @@ class TokenPool {
       e.frozenUntil = e.lastFreezeAt + ms;
     }
     this.#persistState();
-    console.warn(`[pool] ${e.label} fail (${cause})${ms ? ` freeze ${Math.round(ms / 1000)}s` : ''}: ${e.lastErr || ''}`);
+    console.warn(`[pool] ${e.email} fail (${cause})${ms ? ` freeze ${Math.round(ms / 1000)}s` : ''}: ${e.lastErr || ''}`);
   }
 
   snapshot() {
     const now = Date.now();
     return this.#entries.map((e) => ({
-      label: e.label,
+      email: e.email,
       tokenTail: '***' + e.token.slice(-4),
       disabled: e.disabled,
       ok: e.ok,

@@ -163,22 +163,22 @@ export async function relay(req) {
       upstream = await fetch(target, reqInit);
     } catch (err) {
       pool.markFail(entry, 'srv', `fetch: ${err.message}`);
-      attempts.push({ label: entry.label, status: 0, cause: 'fetchErr', detail: err.message });
+      attempts.push({ email: entry.email, status: 0, cause: 'fetchErr', detail: err.message });
       continue;
     }
 
     if (upstream.ok) {
       pool.markOk(entry, requestStartedAt);
-      return streamBack(upstream, entry.label);
+      return streamBack(upstream, entry.email);
     }
 
     const errBody = await drainBody(upstream);
     const diag = diagnoseUpstreamFailure(upstream.status, errBody);
     pool.markFail(entry, diag.cause, `${upstream.status}: ${errBody.slice(0, 160)}`, diag.freezeMs);
-    attempts.push({ label: entry.label, status: upstream.status, cause: diag.cause, detail: errBody });
+    attempts.push({ email: entry.email, status: upstream.status, cause: diag.cause, detail: errBody });
 
     if (!diag.retry) {
-      return echoResponse(upstream.status, upstream.headers, errBody, entry.label);
+      return echoResponse(upstream.status, upstream.headers, errBody, entry.email);
     }
   }
 
@@ -189,7 +189,7 @@ export async function relay(req) {
   return Response.json({
     error: {
       message: `exhausted ${attempts.length} token(s): ${last.cause}`,
-      attempts: attempts.map((a) => ({ label: a.label, status: a.status, cause: a.cause })),
+      attempts: attempts.map((a) => ({ email: a.email, status: a.status, cause: a.cause })),
     },
   }, { status: last.status >= 400 ? last.status : 502 });
 }

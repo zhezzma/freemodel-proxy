@@ -13,10 +13,10 @@ import {
 test('applies persisted frozen state to matching token without exposing raw token', () => {
   const token = 'sk-secret-token';
   const key = tokenStateKey(token);
-  const entries = [{ label: 'user@example.com', token, frozenUntil: 0, lastErr: undefined }];
+  const entries = [{ email: 'user@example.com', token, frozenUntil: 0, lastErr: undefined }];
   const state = {
     [key]: {
-      label: 'user@example.com',
+      email: 'user@example.com',
       frozenUntil: 1_800_000_000_000,
       lastErr: '402: quota',
       cause: 'quota',
@@ -32,10 +32,10 @@ test('applies persisted frozen state to matching token without exposing raw toke
 });
 
 test('ignores expired persisted frozen state', () => {
-  const entries = [{ label: 'user@example.com', token: 'sk-secret-token', frozenUntil: 0 }];
+  const entries = [{ email: 'user@example.com', token: 'sk-secret-token', frozenUntil: 0 }];
   const state = {
     [tokenStateKey(entries[0].token)]: {
-      label: 'user@example.com',
+      email: 'user@example.com',
       frozenUntil: 1_000,
       lastErr: 'old quota',
       cause: 'quota',
@@ -49,10 +49,10 @@ test('ignores expired persisted frozen state', () => {
 });
 
 test('ignores persisted non-quota frozen state', () => {
-  const entries = [{ label: 'user@example.com', token: 'sk-secret-token', frozenUntil: 0 }];
+  const entries = [{ email: 'user@example.com', token: 'sk-secret-token', frozenUntil: 0 }];
   const state = {
     [tokenStateKey(entries[0].token)]: {
-      label: 'user@example.com',
+      email: 'user@example.com',
       frozenUntil: 5_000,
       lastErr: '403: perm',
       cause: 'perm',
@@ -71,16 +71,16 @@ test('persists active frozen entries and prunes recovered tokens', () => {
   const frozenToken = 'sk-frozen';
   const recoveredToken = 'sk-recovered';
   const entries = [
-    { label: 'frozen@example.com', token: frozenToken, frozenUntil: 5_000, lastErr: '402: quota', lastCause: 'quota', fail: 2 },
-    { label: 'perm@example.com', token: 'sk-perm', frozenUntil: 5_000, lastErr: '403: perm', lastCause: 'perm', fail: 1 },
-    { label: 'ok@example.com', token: recoveredToken, frozenUntil: 0, lastErr: undefined, fail: 0 },
+    { email: 'frozen@example.com', token: frozenToken, frozenUntil: 5_000, lastErr: '402: quota', lastCause: 'quota', fail: 2 },
+    { email: 'perm@example.com', token: 'sk-perm', frozenUntil: 5_000, lastErr: '403: perm', lastCause: 'perm', fail: 1 },
+    { email: 'ok@example.com', token: recoveredToken, frozenUntil: 0, lastErr: undefined, fail: 0 },
   ];
 
   persistTokenState(statePath, entries, 1_000);
   const state = loadTokenState(statePath);
 
   assert.deepEqual(Object.keys(state), [tokenStateKey(frozenToken)]);
-  assert.equal(state[tokenStateKey(frozenToken)].label, 'frozen@example.com');
+  assert.equal(state[tokenStateKey(frozenToken)].email, 'frozen@example.com');
   assert.equal(state[tokenStateKey(frozenToken)].lastErr, '402: quota');
   assert.equal(state[tokenStateKey(frozenToken)].cause, 'quota');
 });

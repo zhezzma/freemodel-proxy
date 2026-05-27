@@ -14,15 +14,15 @@ function arg(name, fallback) {
 }
 
 function usage() {
-  console.error(`Usage: node scripts/check-account-status.js --label=<email> [--accounts=<path>] [--upstream=<url>] [--model=<id>]`);
+  console.error(`Usage: node scripts/check-account-status.js --email=<email> [--accounts=<path>] [--upstream=<url>] [--model=<id>]`);
 }
 
-function loadAccount(accountsPath, labelNeedle) {
+function loadAccount(accountsPath, emailNeedle) {
   const data = JSON.parse(fs.readFileSync(accountsPath, 'utf8'));
   if (!Array.isArray(data)) throw new Error(`accounts file must be an array: ${accountsPath}`);
-  const needle = labelNeedle.toLowerCase();
-  const account = data.find((item) => String(item?.label || item?.account || '').toLowerCase().includes(needle));
-  if (!account?.token) throw new Error(`account not found or has no token: ${labelNeedle}`);
+  const needle = emailNeedle.toLowerCase();
+  const account = data.find((item) => String(item?.email || '').toLowerCase().includes(needle));
+  if (!account?.token) throw new Error(`account not found or has no token: ${emailNeedle}`);
   return account;
 }
 
@@ -67,8 +67,8 @@ function buildRequest(token, model) {
 }
 
 async function main() {
-  const label = arg('label', '');
-  if (!label) {
+  const email = arg('email', '');
+  if (!email) {
     usage();
     process.exit(2);
   }
@@ -76,11 +76,11 @@ async function main() {
   const accountsPath = path.resolve(arg('accounts', DEFAULT_ACCOUNTS));
   const upstream = arg('upstream', 'https://cc.freemodel.dev').replace(/\/+$/, '');
   const model = arg('model', 'claude-sonnet-4-5-20250929');
-  const account = loadAccount(accountsPath, label);
+  const account = loadAccount(accountsPath, email);
   const url = `${upstream}/v1/messages?beta=true`;
 
   console.log(JSON.stringify({
-    account: account.label || account.account || '<anon>',
+    account: account.email || '<anon>',
     disabled: Boolean(account.disabled),
     tokenTail: `***${String(account.token).slice(-4)}`,
     url,

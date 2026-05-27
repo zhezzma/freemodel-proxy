@@ -35,7 +35,7 @@ export function persistTokenState(statePath, entries, now = Date.now()) {
   for (const entry of entries) {
     if (entry.lastCause !== 'quota' || !Number.isFinite(entry.frozenUntil) || entry.frozenUntil <= now) continue;
     state[tokenStateKey(entry.token)] = {
-      label: entry.label,
+      email: entry.email,
       tokenTail: `***${entry.token.slice(-4)}`,
       frozenUntil: entry.frozenUntil,
       frozenUntilIso: new Date(entry.frozenUntil).toISOString(),

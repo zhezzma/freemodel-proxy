@@ -2,47 +2,48 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeAccountSelectionMode, selectAccountOrder } from '../src/accountSelection.js';
 
-const entries = ['a', 'b', 'c'].map((label) => ({ label, disabled: false, frozenUntil: 0 }));
+const entries = ['a', 'b', 'c'].map((email) => ({ email, disabled: false, frozenUntil: 0 }));
+const emails = (items) => items.map((entry) => entry.email);
 
 test('sticky mode keeps using the current account while it is available', () => {
   const state = { index: 0 };
 
-  assert.deepEqual(selectAccountOrder(entries, 'sticky', state, 10, () => 0).map((e) => e.label), ['a', 'b', 'c']);
+  assert.deepEqual(emails(selectAccountOrder(entries, 'sticky', state, 10, () => 0)), ['a', 'b', 'c']);
   assert.equal(state.index, 0);
-  assert.deepEqual(selectAccountOrder(entries, 'sticky', state, 10, () => 0).map((e) => e.label), ['a', 'b', 'c']);
+  assert.deepEqual(emails(selectAccountOrder(entries, 'sticky', state, 10, () => 0)), ['a', 'b', 'c']);
   assert.equal(state.index, 0);
 });
 
 test('sticky mode advances to the next available account when current is frozen', () => {
   const state = { index: 0 };
   const frozen = [
-    { label: 'a', disabled: false, frozenUntil: 2_000 },
-    { label: 'b', disabled: false, frozenUntil: 0 },
-    { label: 'c', disabled: false, frozenUntil: 0 },
+    { email: 'a', disabled: false, frozenUntil: 2_000 },
+    { email: 'b', disabled: false, frozenUntil: 0 },
+    { email: 'c', disabled: false, frozenUntil: 0 },
   ];
 
-  assert.deepEqual(selectAccountOrder(frozen, 'sticky', state, 10, () => 1_000).map((e) => e.label), ['b', 'c']);
+  assert.deepEqual(emails(selectAccountOrder(frozen, 'sticky', state, 10, () => 1_000)), ['b', 'c']);
   assert.equal(state.index, 1);
 });
 
 test('round-robin mode advances starting account on each selection', () => {
   const state = { index: 0 };
 
-  assert.deepEqual(selectAccountOrder(entries, 'round-robin', state, 10, () => 0).map((e) => e.label), ['a', 'b', 'c']);
+  assert.deepEqual(emails(selectAccountOrder(entries, 'round-robin', state, 10, () => 0)), ['a', 'b', 'c']);
   assert.equal(state.index, 1);
-  assert.deepEqual(selectAccountOrder(entries, 'round-robin', state, 10, () => 0).map((e) => e.label), ['b', 'c', 'a']);
+  assert.deepEqual(emails(selectAccountOrder(entries, 'round-robin', state, 10, () => 0)), ['b', 'c', 'a']);
   assert.equal(state.index, 2);
 });
 
 test('round-robin mode advances by one even when current account is disabled', () => {
   const state = { index: 0 };
   const mixed = [
-    { label: 'a', disabled: true, frozenUntil: 0 },
-    { label: 'b', disabled: false, frozenUntil: 0 },
-    { label: 'c', disabled: false, frozenUntil: 0 },
+    { email: 'a', disabled: true, frozenUntil: 0 },
+    { email: 'b', disabled: false, frozenUntil: 0 },
+    { email: 'c', disabled: false, frozenUntil: 0 },
   ];
 
-  assert.deepEqual(selectAccountOrder(mixed, 'round-robin', state, 10, () => 0).map((e) => e.label), ['b', 'c']);
+  assert.deepEqual(emails(selectAccountOrder(mixed, 'round-robin', state, 10, () => 0)), ['b', 'c']);
   assert.equal(state.index, 1);
 });
 
@@ -56,7 +57,7 @@ test('round-robin mode advances by one even when all accounts are unavailable', 
 
 test('random mode uses random ordering without duplicate accounts', () => {
   const state = { index: 0 };
-  const order = selectAccountOrder(entries, 'random', state, 10, () => 0, () => 0).map((e) => e.label);
+  const order = emails(selectAccountOrder(entries, 'random', state, 10, () => 0, () => 0));
 
   assert.deepEqual(order.toSorted(), ['a', 'b', 'c']);
   assert.notDeepEqual(order, ['a', 'b', 'c']);
@@ -65,18 +66,18 @@ test('random mode uses random ordering without duplicate accounts', () => {
 test('random mode excludes disabled and frozen accounts', () => {
   const state = { index: 0 };
   const mixed = [
-    { label: 'a', disabled: true, frozenUntil: 0 },
-    { label: 'b', disabled: false, frozenUntil: 2_000 },
-    { label: 'c', disabled: false, frozenUntil: 0 },
+    { email: 'a', disabled: true, frozenUntil: 0 },
+    { email: 'b', disabled: false, frozenUntil: 2_000 },
+    { email: 'c', disabled: false, frozenUntil: 0 },
   ];
 
-  assert.deepEqual(selectAccountOrder(mixed, 'random', state, 10, () => 1_000, () => 0).map((e) => e.label), ['c']);
+  assert.deepEqual(emails(selectAccountOrder(mixed, 'random', state, 10, () => 1_000, () => 0)), ['c']);
 });
 
 test('selection order respects attempt limit', () => {
   const state = { index: 0 };
 
-  assert.deepEqual(selectAccountOrder(entries, 'sticky', state, 2, () => 0).map((e) => e.label), ['a', 'b']);
+  assert.deepEqual(emails(selectAccountOrder(entries, 'sticky', state, 2, () => 0)), ['a', 'b']);
 });
 
 test('round-robin mode handles empty account list without corrupting index', () => {

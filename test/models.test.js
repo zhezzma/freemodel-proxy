@@ -14,8 +14,8 @@ test('model refresh does not retry unknown client errors across tokens', async (
   const accountsPath = path.join(dir, 'accounts.json');
   const statePath = path.join(dir, 'token-state.json');
   fs.writeFileSync(accountsPath, JSON.stringify([
-    { label: 'a@example.com', token: 'sk-a' },
-    { label: 'b@example.com', token: 'sk-b' },
+    { email: 'a@example.com', token: 'sk-a' },
+    { email: 'b@example.com', token: 'sk-b' },
   ]));
 
   const seen = [];
