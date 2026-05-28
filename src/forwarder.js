@@ -57,7 +57,7 @@ function buildAnthropicRequest(originalBody, apiKey) {
     system: [
       {
         type: 'text',
-        text: `x-anthropic-billing-header: cc_version=2.1.126.507; cc_entrypoint=cli; cch=00a69;`,
+        text: `x-anthropic-billing-header: cc_version=2.2.126.507; cc_entrypoint=cli; cch=00a69;`,
       },
       {
         type: 'text',
@@ -80,7 +80,7 @@ function buildAnthropicRequest(originalBody, apiKey) {
     'accept': 'application/json',
     'content-type': 'application/json',
     'authorization': `Bearer ${apiKey}`,
-    'user-agent': 'claude-cli/2.1.126 (external, cli)',
+    'user-agent': 'claude-cli/2.2.126 (external, cli)',
     'anthropic-version': '2023-06-01',
     'anthropic-beta': ANTHROPIC_BETA,
     'anthropic-dangerous-direct-browser-access': 'true',
@@ -158,21 +158,35 @@ export async function relay(req) {
     // 非流式/小请求用 duplex: 'half' 兼容 Node fetch
     if (reqInit.body) reqInit.duplex = 'half';
 
+    console.log(`[relay] → ${entry.email} ${method} ${url.pathname}`);
+
     let upstream;
     try {
       upstream = await fetch(target, reqInit);
     } catch (err) {
+      console.error(`[relay] ✗ ${entry.email} fetch error: ${err.message}`);
       pool.markFail(entry, 'srv', `fetch: ${err.message}`);
       attempts.push({ email: entry.email, status: 0, cause: 'fetchErr', detail: err.message });
       continue;
     }
 
+    // 打印上游响应状态和关键 header
+    const respHeaders = {};
+    for (const [k, v] of upstream.headers) {
+      const lk = k.toLowerCase();
+      if (['content-type', 'x-request-id', 'retry-after', 'x-ratelimit', 'anthropic-ratelimit'].some(prefix => lk.startsWith(prefix))) {
+        respHeaders[k] = v;
+      }
+    }
+
     if (upstream.ok) {
       pool.markOk(entry, requestStartedAt);
+      console.log(`[relay] ✓ ${entry.email} ${upstream.status} ${JSON.stringify(respHeaders)}`);
       return streamBack(upstream, entry.email);
     }
 
     const errBody = await drainBody(upstream);
+    console.error(`[relay] ✗ ${entry.email} ${upstream.status} headers=${JSON.stringify(respHeaders)} body=${errBody.slice(0, 300)}`);
     const diag = diagnoseUpstreamFailure(upstream.status, errBody);
     pool.markFail(entry, diag.cause, `${upstream.status}: ${errBody.slice(0, 160)}`, diag.freezeMs);
     attempts.push({ email: entry.email, status: upstream.status, cause: diag.cause, detail: errBody });
