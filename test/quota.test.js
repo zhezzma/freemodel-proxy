@@ -115,6 +115,14 @@ test('parses English reset time "will reset on today at H:MM AM/PM (UTC+8)"', ()
   assert.equal(result.freezeMs, 111 * 60 * 1000);
 });
 
+test('parses English reset time through the named reset minute', () => {
+  const now = new Date('2026-05-29T12:12:00.002Z'); // 北京时间 20:12:00.002
+  const result = diagnoseUpstreamFailure(402, '{"error":"Usage limit reached, will reset on today at 8:12 PM (UTC+8)"}', now);
+
+  assert.equal(result.cause, 'quota');
+  assert.equal(result.freezeMs, 59_998);
+});
+
 test('parses English reset time with tomorrow', () => {
   const now = new Date('2026-05-29T10:00:00Z'); // 18:00 BJT
   const result = diagnoseUpstreamFailure(402, '{"error":"Usage limit reached, will reset on tomorrow at 10:32 AM (UTC+8)"}', now);

@@ -53,6 +53,9 @@ function parseEnglishResetMs(text, now = new Date()) {
   const nowBjt = beijingParts(now);
   const targetDay = nowBjt.day + (dayWord.toLowerCase() === 'tomorrow' ? 1 : 0);
   const resetAt = beijingDateToUtcMs(nowBjt.year, nowBjt.month, targetDay, hour, minute);
+  if (resetAt <= now.getTime() && now.getTime() < resetAt + 60_000) {
+    return resetAt + 60_000 - now.getTime();
+  }
   return Math.max(0, resetAt - now.getTime());
 }
 
