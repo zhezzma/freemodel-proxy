@@ -41,7 +41,26 @@ function normalizeHour(text, rawHour) {
   return hour;
 }
 
+function parseEnglishResetMs(text, now = new Date()) {
+  // "will reset on today at 2:51 PM (UTC+8)" / "will reset on tomorrow at 10:32 AM (UTC+8)"
+  const m = text.match(/will reset (?:on\s+)?(today|tomorrow)\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)\s*\(UTC\+8\)/i);
+  if (!m) return undefined;
+  const [, dayWord, rawHour, rawMinute, ampm] = m;
+  let hour = Number(rawHour);
+  if (ampm.toUpperCase() === 'PM' && hour < 12) hour += 12;
+  if (ampm.toUpperCase() === 'AM' && hour === 12) hour = 0;
+  const minute = Number(rawMinute);
+  const nowBjt = beijingParts(now);
+  const targetDay = nowBjt.day + (dayWord.toLowerCase() === 'tomorrow' ? 1 : 0);
+  const resetAt = beijingDateToUtcMs(nowBjt.year, nowBjt.month, targetDay, hour, minute);
+  return Math.max(0, resetAt - now.getTime());
+}
+
 function parseChineseResetMs(text, now = new Date()) {
+  // 先尝试英文格式
+  const enMs = parseEnglishResetMs(text, now);
+  if (enMs !== undefined) return enMs;
+
   const hourMinuteRelative = text.match(/(?:(\d+)\s*小时)?\s*(?:(\d+)\s*分钟)?后(?:重置|恢复)?/);
   if (hourMinuteRelative && (hourMinuteRelative[1] || hourMinuteRelative[2])) {
     const hours = Number(hourMinuteRelative[1] || 0);

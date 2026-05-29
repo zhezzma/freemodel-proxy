@@ -41,6 +41,7 @@ export function persistTokenState(statePath, entries, now = Date.now()) {
       frozenUntilIso: new Date(entry.frozenUntil).toISOString(),
       lastErr: entry.lastErr,
       cause: entry.lastCause,
+      resetParsed: entry.resetParsed ?? false,
       fail: entry.fail,
     };
   }

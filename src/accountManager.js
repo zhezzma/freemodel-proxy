@@ -99,6 +99,7 @@ class TokenPool {
     if (ms > 0) {
       e.lastFreezeAt = Date.now();
       e.frozenUntil = e.lastFreezeAt + ms;
+      e.resetParsed = Number.isFinite(freezeMs) && freezeMs > 0;
     }
     this.#persistState();
     console.warn(`[pool] ${e.email} fail (${cause})${ms ? ` freeze ${Math.round(ms / 1000)}s` : ''}: ${e.lastErr || ''}`);

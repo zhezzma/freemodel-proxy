@@ -105,3 +105,19 @@ test('handles Chinese day-period 12 oclock boundaries', () => {
     15 * 60 * 60 * 1000,
   );
 });
+
+test('parses English reset time "will reset on today at H:MM AM/PM (UTC+8)"', () => {
+  // 2026-05-29 05:00:00 UTC = 13:00 BJT
+  const now = new Date('2026-05-29T05:00:00Z');
+  const result = diagnoseUpstreamFailure(402, '{"error":"Usage limit reached, will reset on today at 2:51 PM (UTC+8)"}', now);
+  assert.equal(result.cause, 'quota');
+  // 14:51 BJT = 06:51 UTC, delta = 1h51m = 111min
+  assert.equal(result.freezeMs, 111 * 60 * 1000);
+});
+
+test('parses English reset time with tomorrow', () => {
+  const now = new Date('2026-05-29T10:00:00Z'); // 18:00 BJT
+  const result = diagnoseUpstreamFailure(402, '{"error":"Usage limit reached, will reset on tomorrow at 10:32 AM (UTC+8)"}', now);
+  // tomorrow 10:32 BJT = 2026-05-30 02:32 UTC, delta = 16h32m
+  assert.equal(result.freezeMs, (16 * 60 + 32) * 60 * 1000);
+});

@@ -33,7 +33,7 @@ export const settings = {
   maxAttempts: int(process.env.MAX_RETRIES, 0),
   cooldown: {
     rateLimit: int(process.env.COOLDOWN_RATE_LIMIT_MS, 60000),
-    quota: int(process.env.COOLDOWN_QUOTA_MS, 3600000),
+    quota: int(process.env.COOLDOWN_QUOTA_MS, 18000000),
     serverError: int(process.env.COOLDOWN_SERVER_ERROR_MS, 10000),
   },
 };
