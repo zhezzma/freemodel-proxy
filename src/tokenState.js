@@ -27,6 +27,7 @@ export function applyTokenState(entries, state, now = Date.now()) {
     }
     entry.lastErr = saved.lastErr || entry.lastErr;
     entry.lastCause = saved.cause || entry.lastCause;
+    entry.resetParsed = saved.resetParsed ?? entry.resetParsed;
   }
 }
 

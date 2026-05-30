@@ -31,6 +31,24 @@ test('applies persisted frozen state to matching token without exposing raw toke
   assert.equal(key.includes(token), false);
 });
 
+test('restores persisted reset parse marker for active quota freezes', () => {
+  const token = 'sk-secret-token';
+  const entries = [{ email: 'user@example.com', token, frozenUntil: 0 }];
+  const state = {
+    [tokenStateKey(token)]: {
+      email: 'user@example.com',
+      frozenUntil: 1_800_000_000_000,
+      lastErr: '402: quota',
+      cause: 'quota',
+      resetParsed: true,
+    },
+  };
+
+  applyTokenState(entries, state, new Date('2026-05-26T00:00:00Z').getTime());
+
+  assert.equal(entries[0].resetParsed, true);
+});
+
 test('ignores expired persisted frozen state', () => {
   const entries = [{ email: 'user@example.com', token: 'sk-secret-token', frozenUntil: 0 }];
   const state = {
