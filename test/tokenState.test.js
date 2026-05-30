@@ -102,3 +102,20 @@ test('persists active frozen entries and prunes recovered tokens', () => {
   assert.equal(state[tokenStateKey(frozenToken)].lastErr, '402: quota');
   assert.equal(state[tokenStateKey(frozenToken)].cause, 'quota');
 });
+
+test('persists reset parse marker only when explicitly true', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'token-state-'));
+  const statePath = path.join(dir, 'token-state.json');
+  const parsedToken = 'sk-parsed';
+  const fallbackToken = 'sk-fallback';
+  const entries = [
+    { email: 'parsed@example.com', token: parsedToken, frozenUntil: 5_000, lastErr: '402: quota', lastCause: 'quota', resetParsed: true },
+    { email: 'fallback@example.com', token: fallbackToken, frozenUntil: 5_000, lastErr: '402: quota', lastCause: 'quota', resetParsed: false },
+  ];
+
+  persistTokenState(statePath, entries, 1_000);
+  const state = loadTokenState(statePath);
+
+  assert.equal(state[tokenStateKey(parsedToken)].resetParsed, true);
+  assert.equal('resetParsed' in state[tokenStateKey(fallbackToken)], false);
+});

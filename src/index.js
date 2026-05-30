@@ -4,23 +4,17 @@ import { settings } from './config.js';
 import { pool } from './accountManager.js';
 import { relay } from './forwarder.js';
 import { listModels, getModel } from './models.js';
+import { fetchAccountUsage, listUsageAccounts } from './usage.js';
+import { dashboardHtml } from './dashboard.js';
+import { isPublicPath } from './publicPaths.js';
 
 const app = new Hono();
 
 app.get('/health', (c) => c.json({ ok: true, tokens: pool.count() }));
 app.get('/status', (c) => c.json({ tokens: pool.snapshot() }));
-
-app.get('/', (c) =>
-  c.json({
-    name: 'freemodel-proxy',
-    upstreams: {
-      anthropic: settings.upstreamAnthropic,
-      openai: settings.upstreamOpenAI,
-    },
-    routes: ['/v1/messages', '/messages', '/v1/chat/completions', '/v1/responses', '/v1/models', '/models'],
-    tokens: pool.count(),
-  }),
-);
+app.get('/api/accounts', (c) => c.json(listUsageAccounts(settings.accountsPath)));
+app.get('/api/accounts/:id/usage', async (c) => c.json(await fetchAccountUsage(settings.accountsPath, c.req.param('id'))));
+app.get('/', (c) => c.html(dashboardHtml()));
 
 // 自定义 fetch：gate + 路由分发，绕过 Hono 中间件以避免流式响应内部状态错误
 const honoFetch = app.fetch;
@@ -29,7 +23,7 @@ const customFetch = async (req) => {
   const pathname = url.pathname;
 
   // Gate
-  if (settings.gateToken && pathname !== '/health' && pathname !== '/status') {
+  if (settings.gateToken && !isPublicPath(pathname)) {
     const bearer = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
       || req.headers.get('x-api-key') || '';
     const passed = bearer === settings.gateToken;

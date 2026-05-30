@@ -35,16 +35,18 @@ export function persistTokenState(statePath, entries, now = Date.now()) {
   const state = {};
   for (const entry of entries) {
     if (entry.lastCause !== 'quota' || !Number.isFinite(entry.frozenUntil) || entry.frozenUntil <= now) continue;
-    state[tokenStateKey(entry.token)] = {
+    const saved = {
       email: entry.email,
       tokenTail: `***${entry.token.slice(-4)}`,
       frozenUntil: entry.frozenUntil,
       frozenUntilIso: new Date(entry.frozenUntil).toISOString(),
       lastErr: entry.lastErr,
       cause: entry.lastCause,
-      resetParsed: entry.resetParsed ?? false,
       fail: entry.fail,
     };
+    // 只持久化有诊断价值的标记；未解析成功时省略字段，避免状态文件被 resetParsed:false 淹没。
+    if (entry.resetParsed === true) saved.resetParsed = true;
+    state[tokenStateKey(entry.token)] = saved;
   }
 
   fs.mkdirSync(path.dirname(statePath), { recursive: true });
