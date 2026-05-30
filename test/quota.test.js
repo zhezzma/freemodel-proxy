@@ -129,3 +129,23 @@ test('parses English reset time with tomorrow', () => {
   // tomorrow 10:32 BJT = 2026-05-30 02:32 UTC, delta = 16h32m
   assert.equal(result.freezeMs, (16 * 60 + 32) * 60 * 1000);
 });
+
+test('parses English reset time with month-day date', () => {
+  const now = new Date('2026-05-30T04:27:29.167Z'); // 12:27:29.167 BJT
+  const result = diagnoseUpstreamFailure(
+    402,
+    '{"error":"Usage limit reached, will reset on Jun 3 at 4:58 PM (UTC+8)"}',
+    now,
+  );
+
+  assert.equal(result.cause, 'quota');
+  assert.equal(result.freezeMs, 361_830_833);
+});
+
+test('parses English month-day reset time through the named reset minute', () => {
+  const now = new Date('2026-06-03T08:58:00.002Z'); // 北京时间 16:58:00.002
+  const result = diagnoseUpstreamFailure(402, '{"error":"Usage limit reached, will reset on Jun 3 at 4:58 PM (UTC+8)"}', now);
+
+  assert.equal(result.cause, 'quota');
+  assert.equal(result.freezeMs, 59_998);
+});

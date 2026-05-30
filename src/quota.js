@@ -41,22 +41,63 @@ function normalizeHour(text, rawHour) {
   return hour;
 }
 
-function parseEnglishResetMs(text, now = new Date()) {
-  // "will reset on today at 2:51 PM (UTC+8)" / "will reset on tomorrow at 10:32 AM (UTC+8)"
-  const m = text.match(/will reset (?:on\s+)?(today|tomorrow)\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)\s*\(UTC\+8\)/i);
-  if (!m) return undefined;
-  const [, dayWord, rawHour, rawMinute, ampm] = m;
+const ENGLISH_MONTHS = new Map([
+  ['jan', 0], ['january', 0],
+  ['feb', 1], ['february', 1],
+  ['mar', 2], ['march', 2],
+  ['apr', 3], ['april', 3],
+  ['may', 4],
+  ['jun', 5], ['june', 5],
+  ['jul', 6], ['july', 6],
+  ['aug', 7], ['august', 7],
+  ['sep', 8], ['sept', 8], ['september', 8],
+  ['oct', 9], ['october', 9],
+  ['nov', 10], ['november', 10],
+  ['dec', 11], ['december', 11],
+]);
+
+function englishHour(rawHour, ampm) {
   let hour = Number(rawHour);
   if (ampm.toUpperCase() === 'PM' && hour < 12) hour += 12;
   if (ampm.toUpperCase() === 'AM' && hour === 12) hour = 0;
-  const minute = Number(rawMinute);
-  const nowBjt = beijingParts(now);
-  const targetDay = nowBjt.day + (dayWord.toLowerCase() === 'tomorrow' ? 1 : 0);
-  const resetAt = beijingDateToUtcMs(nowBjt.year, nowBjt.month, targetDay, hour, minute);
+  return hour;
+}
+
+function englishResetDeltaMs(resetAt, now) {
   if (resetAt <= now.getTime() && now.getTime() < resetAt + 60_000) {
     return resetAt + 60_000 - now.getTime();
   }
   return Math.max(0, resetAt - now.getTime());
+}
+
+function parseEnglishResetMs(text, now = new Date()) {
+  // "will reset on today at 2:51 PM (UTC+8)" / "will reset on tomorrow at 10:32 AM (UTC+8)"
+  const relative = text.match(/will reset (?:on\s+)?(today|tomorrow)\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)\s*\(UTC\+8\)/i);
+  if (relative) {
+    const [, dayWord, rawHour, rawMinute, ampm] = relative;
+    const nowBjt = beijingParts(now);
+    const targetDay = nowBjt.day + (dayWord.toLowerCase() === 'tomorrow' ? 1 : 0);
+    const resetAt = beijingDateToUtcMs(nowBjt.year, nowBjt.month, targetDay, englishHour(rawHour, ampm), Number(rawMinute));
+    return englishResetDeltaMs(resetAt, now);
+  }
+
+  // "will reset on Jun 3 at 4:58 PM (UTC+8)"
+  const monthDay = text.match(/will reset on\s+([A-Z][a-z]+)\s+(\d{1,2})\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)\s*\(UTC\+8\)/i);
+  if (!monthDay) return undefined;
+
+  const [, rawMonth, rawDay, rawHour, rawMinute, ampm] = monthDay;
+  const targetMonth = ENGLISH_MONTHS.get(rawMonth.toLowerCase());
+  if (targetMonth === undefined) return undefined;
+
+  const nowBjt = beijingParts(now);
+  const targetDay = Number(rawDay);
+  const hour = englishHour(rawHour, ampm);
+  const minute = Number(rawMinute);
+  let resetAt = beijingDateToUtcMs(nowBjt.year, targetMonth, targetDay, hour, minute);
+  if (now.getTime() >= resetAt + 60_000) {
+    resetAt = beijingDateToUtcMs(nowBjt.year + 1, targetMonth, targetDay, hour, minute);
+  }
+  return englishResetDeltaMs(resetAt, now);
 }
 
 function parseChineseResetMs(text, now = new Date()) {
