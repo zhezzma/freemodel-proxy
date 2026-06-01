@@ -1,0 +1,10 @@
+.git
+.github
+archive
+node_modules
+npm-debug.log*
+Dockerfile
+.dockerignore
+.env
+accounts.json
+token-state.json

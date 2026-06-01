@@ -1,0 +1,30 @@
+main:
+  push:
+    - docker:
+        image: node:20
+      imports: https://cnb.cool/godgodgame/oci-private-key/-/blob/main/envs.yml
+      stages:
+        - name: 环境检查
+          script: node -v && npm -v
+
+        - name: 将pro分支同步更新到github的main分支
+          script: git push https://$GITHUB_TOKEN_GK:$GITHUB_TOKEN@github.com/zhezzma/freemodel-proxy.git HEAD:main
+
+        - name: 构建并打包
+          script: |
+            rm -rf archive
+            mkdir -p archive
+            tar \
+              --exclude='./archive' \
+              --exclude='.git' \
+              --exclude='accounts.json' \
+              --exclude='node_modules' \
+              --exclude='.env' \
+              -zcvf archive/release.tar.gz .
+
+        - name: ansible发布
+          image: plugins/ansible
+          settings:
+            private_key: $SERVER_PRIVATE_KEY
+            inventory: hosts
+            playbook: playbook.yml

@@ -1,0 +1,82 @@
+- name: Deploy freemodel-proxy
+  hosts: hostgroup
+  remote_user: root
+  vars:
+    app_name: freemodel-proxy
+    release_archive: /root/deploy/freemodel-proxy.tar.gz
+    temp_dir: /tmp/freemodel-proxy-new
+    app_dir: /root/workspace/freemodel-proxy
+  tasks:
+    - name: 确保部署缓存目录存在
+      file:
+        path: /root/deploy
+        state: directory
+        mode: "0755"
+
+    - name: 复制发布包到远程服务器
+      copy:
+        src: archive/release.tar.gz
+        dest: "{{ release_archive }}"
+
+    - name: 清理旧临时目录
+      file:
+        path: "{{ temp_dir }}"
+        state: absent
+
+    - name: 创建临时目录用于解压
+      file:
+        path: "{{ temp_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: 解压发布包到临时目录
+      unarchive:
+        src: "{{ release_archive }}"
+        dest: "{{ temp_dir }}"
+        remote_src: yes
+
+    - name: 确保目标目录存在
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: 同步文件到目标目录（删除远程多余文件，但保留账号、环境和依赖）
+      shell: |
+        rsync -a --delete \
+          --exclude='accounts.json' \
+          --exclude='node_modules/' \
+          --exclude='.env' \
+          {{ temp_dir }}/ {{ app_dir }}/
+      args:
+        executable: /bin/bash
+
+    - name: 安装生产依赖
+      shell: |
+        cd {{ app_dir }}
+        source /root/.nvm/nvm.sh
+        nvm use 20 || nvm use --lts
+        npm install --omit=dev
+      args:
+        executable: /bin/bash
+
+    - name: 安装 systemd 服务文件
+      copy:
+        src: freemodel-proxy.service
+        dest: /etc/systemd/system/freemodel-proxy.service
+        mode: "0644"
+
+    - name: 重新加载 systemd 配置
+      systemd:
+        daemon_reload: yes
+
+    - name: 启用并重启 freemodel-proxy
+      systemd:
+        name: freemodel-proxy
+        enabled: yes
+        state: restarted
+
+    - name: 清理临时目录
+      file:
+        path: "{{ temp_dir }}"
+        state: absent
