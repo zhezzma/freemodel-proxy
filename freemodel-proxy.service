@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/root/workspace/freemodel-proxy
 Environment=NODE_ENV=production
-ExecStart=/bin/bash -lc 'source /root/.nvm/nvm.sh && (nvm use 20 || nvm use --lts) && exec node src/index.js'
+ExecStart=/bin/bash -lc 'source /root/.nvm/nvm.sh && nvm use default && exec node src/index.js'
 Restart=always
 RestartSec=3
 KillSignal=SIGTERM
