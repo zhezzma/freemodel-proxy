@@ -13,6 +13,35 @@ const STRIP_RES = new Set([
   'content-encoding', 'content-length',
 ]);
 
+// 客户端可携带的来源 IP / 转发链相关 header。
+// 这些是上游用来判定来源 IP（进而限流）的依据，必须由代理统一控制，
+// 绝不能把本机/中间层真实 IP 透传上去。
+const CLIENT_IP_HEADERS = new Set([
+  'x-forwarded-for', 'x-real-ip', 'forwarded', 'cf-connecting-ip',
+  'true-client-ip', 'x-client-ip', 'x-cluster-client-ip',
+  'fastly-client-ip', 'x-forwarded-proto', 'x-forwarded-host', 'x-forwarded-port',
+]);
+
+/**
+ * 统一处理转发给上游的来源 IP header。
+ *   - 先大小写无关地删除所有客户端携带的 IP / 转发链 header，避免泄露真实来源；
+ *   - 若账号配置了固定 ip，则写入 x-forwarded-for 与 x-real-ip（覆盖任何传入值），
+ *     让上游按账号 IP 计算限流；
+ *   - 未配置 ip 时只删不加，上游看不到任何来源 IP header。
+ * 直接修改并返回传入的 headers 对象。
+ */
+export function applyAccountIp(headers, ip) {
+  for (const key of Object.keys(headers)) {
+    if (CLIENT_IP_HEADERS.has(key.toLowerCase())) delete headers[key];
+  }
+  const clean = typeof ip === 'string' ? ip.trim() : '';
+  if (clean) {
+    headers['x-forwarded-for'] = clean;
+    headers['x-real-ip'] = clean;
+  }
+  return headers;
+}
+
 // --- Anthropic Messages 专用常量 ---
 const DEVICE_ID = 'a225c51dcb1945c1575dc6d055fe0a24f6c45a3f2f1c6ca6de67a5a3eccff067';
 const ANTHROPIC_BETA =
@@ -57,7 +86,7 @@ function buildAnthropicRequest(originalBody, apiKey) {
     system: [
       {
         type: 'text',
-        text: `x-anthropic-billing-header: cc_version=2.2.126.507; cc_entrypoint=cli; cch=00a69;`,
+        text: `x-anthropic-billing-header: cc_version=2.1.126.507; cc_entrypoint=cli; cch=00a69;`,
       },
       {
         type: 'text',
@@ -80,7 +109,7 @@ function buildAnthropicRequest(originalBody, apiKey) {
     'accept': 'application/json',
     'content-type': 'application/json',
     'authorization': `Bearer ${apiKey}`,
-    'user-agent': 'claude-cli/2.2.126 (external, cli)',
+    'user-agent': 'claude-cli/2.1.126 (external, cli)',
     'anthropic-version': '2023-06-01',
     'anthropic-beta': ANTHROPIC_BETA,
     'anthropic-dangerous-direct-browser-access': 'true',
@@ -141,16 +170,16 @@ export async function relay(req) {
       const enriched = buildAnthropicRequest(rawBody, entry.token);
       reqInit = {
         method,
-        headers: enriched.headers,
+        headers: applyAccountIp(enriched.headers, entry.ip),
         body: enriched.body,
       };
     } else {
       reqInit = {
         method,
-        headers: {
-          ...keepHeaders,
-          authorization: `Bearer ${entry.token}`,
-        },
+        headers: applyAccountIp(
+          { ...keepHeaders, authorization: `Bearer ${entry.token}` },
+          entry.ip,
+        ),
         body: rawBody || undefined,
       };
     }

@@ -23,4 +23,6 @@ test('dashboard html lists accounts first and fetches per-account usage with loc
   assert.doesNotMatch(html, /refreshBtn/);
   assert.match(html, /5小时窗口/);
   assert.match(html, /7天窗口/);
+  assert.match(html, /isAbuser/);
+  assert.match(html, /已封禁/);
 });

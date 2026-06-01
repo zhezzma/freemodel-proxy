@@ -44,6 +44,7 @@ class TokenPool {
         return {
           email: d.email || '<anon>',
           token: d.token,
+          ip: typeof d.ip === 'string' ? d.ip.trim() : undefined,
           disabled: !!d.disabled,
           frozenUntil: prev?.frozenUntil ?? 0,
           lastErr: prev?.lastErr,
