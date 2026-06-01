@@ -7,6 +7,8 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/root/workspace/freemodel-proxy
 Environment=NODE_ENV=production
+Environment=HOME=/root
+Environment=NVM_DIR=/root/.nvm
 ExecStart=/bin/bash -lc 'source /root/.nvm/nvm.sh && nvm use default && exec node src/index.js'
 Restart=always
 RestartSec=3
