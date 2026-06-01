@@ -13,7 +13,11 @@ test('dashboard html lists accounts first and fetches per-account usage with loc
   assert.match(html, /usage-cache-v1/);
   assert.match(html, /CACHE_TTL_MS = 10 \* 60 \* 1000/);
   assert.match(html, /Date\.now\(\) - Date\.parse\(cached\.cachedAt\) < CACHE_TTL_MS/);
-  assert.match(html, /if \(!cached\) fetchOne\(account, accounts\)/);
+  assert.match(html, /IntersectionObserver/);
+  assert.match(html, /rootMargin: '600px 0px'/);
+  assert.match(html, /observeAccountCards\(accounts\)/);
+  assert.match(html, /fetchOne\(account, accounts\)/);
+  assert.doesNotMatch(html, /data\.accounts\.forEach\(account => \{ const cached = readCache\(account\.id\); if \(!cached\) fetchOne\(account, accounts\); \}\)/);
   assert.doesNotMatch(html, /force/);
   assert.doesNotMatch(html, /setInterval/);
   assert.doesNotMatch(html, /refreshBtn/);
