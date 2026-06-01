@@ -19,6 +19,13 @@ if (fs.existsSync(envPath)) {
 const int = (s, d) => (Number.isFinite(Number(s)) ? Number(s) : d);
 const accountsPath = path.resolve(process.cwd(), process.env.ACCOUNTS_FILE || './accounts.json');
 
+// 支持通过环境变量 ACCOUNTS_JSON 直接注入账号数据（适用于无法挂载 volume 的场景）
+if (process.env.ACCOUNTS_JSON) {
+  fs.mkdirSync(path.dirname(accountsPath), { recursive: true });
+  fs.writeFileSync(accountsPath, process.env.ACCOUNTS_JSON, 'utf8');
+  console.log('[config] ACCOUNTS_JSON env detected, wrote to', accountsPath);
+}
+
 export const settings = {
   port: int(process.env.PORT, 18002),
   host: process.env.HOST || '0.0.0.0',
