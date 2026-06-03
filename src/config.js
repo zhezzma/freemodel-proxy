@@ -40,5 +40,6 @@ export const settings = {
   maxAttempts: int(process.env.MAX_RETRIES, 0),
   cooldown: {
     quota: int(process.env.COOLDOWN_QUOTA_MS, 18000000),
+    incompat: int(process.env.COOLDOWN_INCOMPAT_MS, 600000),
   },
 };

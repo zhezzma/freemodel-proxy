@@ -159,10 +159,11 @@ function parseChineseResetMs(text, now = new Date()) {
 }
 
 export function resolveFailureFreezeMs(cause, cooldown, upstreamFreezeMs) {
-  // 显式冻结时长优先（如 thinking 多轮不兼容的后端，由 diagnoseUpstreamFailure 指定）。
+  // 显式冻结时长优先（如 quota 从上游响应解析出的重置时间）。
   if (Number.isFinite(upstreamFreezeMs) && upstreamFreezeMs > 0) return upstreamFreezeMs;
-  if (cause !== 'quota') return 0;
-  return cooldown.quota;
+  if (cause === 'quota') return cooldown.quota;
+  if (cause === 'incompat') return cooldown.incompat;
+  return 0;
 }
 
 export function diagnoseUpstreamFailure(status, body, now = new Date()) {
@@ -181,7 +182,7 @@ export function diagnoseUpstreamFailure(status, body, now = new Date()) {
   // 上一轮的 thinking 块；部分账号 key 未开通 Anthropic 端点。这两类 400 都是
   // 后端能力/路由问题，同一请求换个账号大概率能成功，故标为可重试并冻结该账号。
   if (/content\[\]\.thinking|must be passed back|unsupported_client|not supported on this endpoint/i.test(text)) {
-    return { retry: true, cause: 'incompat', freezeMs: 600_000 };
+    return { retry: true, cause: 'incompat' };
   }
 
   return { retry: false, cause: 'badreq' };
