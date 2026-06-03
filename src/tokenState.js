@@ -6,6 +6,12 @@ export function tokenStateKey(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex').slice(0, 24);
 }
 
+// 需要跨重启持久化/恢复的冻结原因：
+//   - quota：额度耗尽，冻结到重置时间
+//   - incompat：后端不兼容（thinking 多轮回传 / 未开通 Anthropic 端点），冻结 10 分钟
+// rate / srv / perm 等短暂或一次性故障不落盘。
+const PERSIST_CAUSES = new Set(['quota', 'incompat']);
+
 export function loadTokenState(statePath) {
   try {
     const raw = fs.readFileSync(statePath, 'utf8');
@@ -19,7 +25,7 @@ export function loadTokenState(statePath) {
 export function applyTokenState(entries, state, now = Date.now()) {
   for (const entry of entries) {
     const saved = state[tokenStateKey(entry.token)];
-    if (!saved || saved.cause !== 'quota' || !Number.isFinite(saved.frozenUntil) || saved.frozenUntil <= now) continue;
+    if (!saved || !PERSIST_CAUSES.has(saved.cause) || !Number.isFinite(saved.frozenUntil) || saved.frozenUntil <= now) continue;
 
     // 只恢复仍未到期的冻结状态；若内存中已有更晚冻结时间，保留更保守的值。
     if (!Number.isFinite(entry.frozenUntil) || saved.frozenUntil > entry.frozenUntil) {
@@ -34,7 +40,8 @@ export function applyTokenState(entries, state, now = Date.now()) {
 export function persistTokenState(statePath, entries, now = Date.now()) {
   const state = {};
   for (const entry of entries) {
-    if (entry.lastCause !== 'quota' || !Number.isFinite(entry.frozenUntil) || entry.frozenUntil <= now) continue;
+    if (entry.lastCause !== 'quota' && entry.lastCause !== 'incompat') continue;
+    if (!Number.isFinite(entry.frozenUntil) || entry.frozenUntil <= now) continue;
     const saved = {
       email: entry.email,
       tokenTail: `***${entry.token.slice(-4)}`,

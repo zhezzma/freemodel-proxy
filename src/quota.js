@@ -159,8 +159,9 @@ function parseChineseResetMs(text, now = new Date()) {
 }
 
 export function resolveFailureFreezeMs(cause, cooldown, upstreamFreezeMs) {
-  if (cause !== 'quota') return 0;
+  // 显式冻结时长优先（如 thinking 多轮不兼容的后端，由 diagnoseUpstreamFailure 指定）。
   if (Number.isFinite(upstreamFreezeMs) && upstreamFreezeMs > 0) return upstreamFreezeMs;
+  if (cause !== 'quota') return 0;
   return cooldown.quota;
 }
 
@@ -175,5 +176,13 @@ export function diagnoseUpstreamFailure(status, body, now = new Date()) {
   if (status === 401) return { retry: true, cause: 'perm' };
   if (status === 305) return { retry: true, cause: 'srv' };
   if (status >= 500) return { retry: true, cause: 'srv' };
+
+  // thinking 多轮（带 tool_use）请求打到严格的 DeepSeek 套壳后端时，会要求回传
+  // 上一轮的 thinking 块；部分账号 key 未开通 Anthropic 端点。这两类 400 都是
+  // 后端能力/路由问题，同一请求换个账号大概率能成功，故标为可重试并冻结该账号。
+  if (/content\[\]\.thinking|must be passed back|unsupported_client|not supported on this endpoint/i.test(text)) {
+    return { retry: true, cause: 'incompat', freezeMs: 600_000 };
+  }
+
   return { retry: false, cause: 'badreq' };
 }
